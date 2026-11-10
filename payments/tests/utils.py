@@ -1,6 +1,6 @@
 try:
 	from erpnext.tests.utils import ERPNextTestSuite as _BaseSuite
-except ImportError:  # Books (erpnext) not installed: fall back to the framework test case
+except ImportError:  # ERPNext not installed: fall back to the framework test case
 	from frappe.tests.utils import FrappeTestCase as _BaseSuite
 
 
