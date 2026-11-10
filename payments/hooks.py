@@ -1,10 +1,13 @@
 from . import __version__ as app_version
 
 app_name = "payments"
-app_title = "Payments"
-app_publisher = "Frappe Technologies"
+from payments.brand import BRAND
+
+app_title = BRAND["product_name"]
+app_logo_url = BRAND["logo"]
+app_publisher = BRAND["company"]
 app_description = "Payments app for frappe"
-app_email = "hello@frappe.io"
+app_email = BRAND["email"]
 app_license = "MIT"
 
 # Includes in <head>
