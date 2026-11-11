@@ -1,10 +1,9 @@
 # Copyright (c) 2020, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import unittest
 from json import dumps
 from unittest.mock import patch
-
-import unittest
 
 import frappe
 
