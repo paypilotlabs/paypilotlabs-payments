@@ -3,7 +3,10 @@ name = "payments"
 authors = [
     { name = "Frappe Technologies Pvt Ltd", email = "hello@frappe.io"}
 ]
-description = "Payments app for frappe"
+maintainers = [
+    { name = "PayPilotLabs", email = "founder@paypilotlabs.com"}
+]
+description = "Payment gateway integrations for PayPilotLabs products"
 requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]
@@ -59,8 +62,8 @@ indent-style = "tab"
 docstring-code-format = true
 
 [project.urls]
-Repository = "https://github.com/frappe/payments.git"
-"Bug Reports" = "https://github.com/frappe/payments/issues"
+Repository = "https://github.com/paypilotlabs/paypilotlabs-payments.git"
+"Bug Reports" = "https://github.com/paypilotlabs/paypilotlabs-payments/issues"
 
 [tool.bench.frappe-dependencies]
 frappe = ">=16.0.0,<17.0.0"
