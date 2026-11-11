@@ -4,11 +4,18 @@
 from json import dumps
 from unittest.mock import patch
 
+import unittest
+
 import frappe
-from erpnext.accounts.doctype.payment_entry.test_payment_entry import create_customer
-from erpnext.accounts.doctype.pos_invoice.test_pos_invoice import create_pos_invoice
-from erpnext.accounts.doctype.pos_opening_entry.test_pos_opening_entry import create_opening_entry
-from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
+
+try:
+	from erpnext.accounts.doctype.payment_entry.test_payment_entry import create_customer
+	from erpnext.accounts.doctype.pos_invoice.test_pos_invoice import create_pos_invoice
+	from erpnext.accounts.doctype.pos_opening_entry.test_pos_opening_entry import create_opening_entry
+	from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
+except ImportError:
+	# M-Pesa runs on ERP POS invoices; without ERP there is nothing to test.
+	raise unittest.SkipTest("ERP is not installed")
 
 from payments.payment_gateways.doctype.mpesa_settings.mpesa_settings import (
 	create_mode_of_payment,
@@ -22,6 +29,13 @@ from payments.tests.utils import PaymentsTestSuite
 @patch("payments.payment_gateways.doctype.mpesa_settings.mpesa_settings.generate_stk_push")
 class TestMpesaSettings(PaymentsTestSuite):
 	def setUp(self):
+		# the callbacks below are fakes, so M-Pesa's status query would reject them
+		self.enterContext(
+			patch(
+				"payments.payment_gateways.doctype.mpesa_settings.mpesa_settings.is_stk_push_paid",
+				return_value=True,
+			)
+		)
 		self.enterContext(self.change_settings("Global Defaults", {"default_company": "Wind Power LLC"}))
 		self.enterContext(self.change_settings("POS Settings", {"invoice_type": "POS Invoice"}))
 

@@ -143,3 +143,20 @@ class MpesaConnector:
 		saf_url = "{}{}".format(self.base_url, "/mpesa/stkpush/v1/processrequest")
 		r = requests.post(saf_url, headers=headers, json=payload)
 		return r.json()
+
+	def stk_push_query(self, business_shortcode=None, passcode=None, checkout_request_id=None):
+		"""Ask M-Pesa for the result of an STK push. ResultCode "0" means the customer paid."""
+		time = str(datetime.datetime.now()).split(".")[0].replace("-", "").replace(" ", "").replace(":", "")
+		password = base64.b64encode(f"{business_shortcode!s}{passcode!s}{time}".encode()).decode()
+		payload = {
+			"BusinessShortCode": business_shortcode,
+			"Password": password,
+			"Timestamp": time,
+			"CheckoutRequestID": checkout_request_id,
+		}
+		headers = {
+			"Authorization": f"Bearer {self.authentication_token}",
+			"Content-Type": "application/json",
+		}
+		r = requests.post(f"{self.base_url}/mpesa/stkpushquery/v1/query", headers=headers, json=payload)
+		return r.json()

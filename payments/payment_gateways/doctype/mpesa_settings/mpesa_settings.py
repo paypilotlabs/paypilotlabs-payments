@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import create_request_log
 from frappe.model.document import Document
-from frappe.utils import call_hook_method, fmt_money, get_request_site_address
+from frappe.utils import call_hook_method, flt, fmt_money, get_request_site_address
 
 from payments.payment_gateways.doctype.mpesa_settings.mpesa_connector import MpesaConnector
 from payments.payment_gateways.doctype.mpesa_settings.mpesa_custom_fields import (
@@ -112,18 +112,7 @@ def generate_stk_push(**kwargs):
 			+ "/api/method/payments.payment_gateways.doctype.mpesa_settings.mpesa_settings.verify_transaction"
 		)
 
-		mpesa_settings = frappe.get_doc("Mpesa Settings", args.payment_gateway[6:])
-		env = "production" if not mpesa_settings.sandbox else "sandbox"
-		# for sandbox, business shortcode is same as till number
-		business_shortcode = (
-			mpesa_settings.business_shortcode if env == "production" else mpesa_settings.till_number
-		)
-
-		connector = MpesaConnector(
-			env=env,
-			app_key=mpesa_settings.consumer_key,
-			app_secret=mpesa_settings.get_password("consumer_secret"),
-		)
+		mpesa_settings, connector, business_shortcode = get_stk_connector(args.payment_gateway)
 
 		mobile_number = sanitize_mobile_number(args.sender)
 
@@ -144,6 +133,36 @@ def generate_stk_push(**kwargs):
 		)
 
 
+def get_stk_connector(payment_gateway):
+	mpesa_settings = frappe.get_doc("Mpesa Settings", payment_gateway[6:])
+	env = "production" if not mpesa_settings.sandbox else "sandbox"
+	# for sandbox, business shortcode is same as till number
+	business_shortcode = mpesa_settings.business_shortcode if env == "production" else mpesa_settings.till_number
+
+	connector = MpesaConnector(
+		env=env,
+		app_key=mpesa_settings.consumer_key,
+		app_secret=mpesa_settings.get_password("consumer_secret"),
+	)
+	return mpesa_settings, connector, business_shortcode
+
+
+def is_stk_push_paid(transaction_data, checkout_id):
+	"""The callback URL is public, so ask M-Pesa directly whether this checkout was paid."""
+	try:
+		mpesa_settings, connector, business_shortcode = get_stk_connector(transaction_data.payment_gateway)
+		response = connector.stk_push_query(
+			business_shortcode=business_shortcode,
+			passcode=mpesa_settings.get_password("online_passkey"),
+			checkout_request_id=checkout_id,
+		)
+	except Exception:
+		frappe.log_error("Mpesa: could not confirm transaction")
+		return False
+
+	return str(response.get("ResultCode")) == "0"
+
+
 def sanitize_mobile_number(number):
 	"""Add country code and strip leading zeroes from the phone number."""
 	return "254" + str(number).lstrip("0")
@@ -159,15 +178,24 @@ def verify_transaction(**kwargs):
 		frappe.throw(_("Invalid Checkout Request ID"))
 
 	integration_request = frappe.get_doc("Integration Request", checkout_id)
+	if integration_request.integration_request_service != "Mpesa" or integration_request.status == "Completed":
+		return
+
 	transaction_data = frappe._dict(loads(integration_request.data))
 	total_paid = 0  # for multiple integration request made against a pos invoice
 	success = False  # for reporting successfull callback to point of sale ui
+
+	if transaction_response["ResultCode"] == 0 and not is_stk_push_paid(transaction_data, checkout_id):
+		frappe.log_error(f"Mpesa: success callback for {checkout_id} not confirmed by M-Pesa")
+		transaction_response["ResultCode"] = -1
+		transaction_response["ResultDesc"] = _("Payment could not be confirmed with M-Pesa")
 
 	if transaction_response["ResultCode"] == 0:
 		if integration_request.reference_doctype and integration_request.reference_docname:
 			try:
 				item_response = transaction_response["CallbackMetadata"]["Item"]
-				amount = fetch_param_value(item_response, "Amount", "Name")
+				# the amount we asked for, not the one in the (unsigned) callback body
+				amount = flt(transaction_data.request_amount) or fetch_param_value(item_response, "Amount", "Name")
 				mpesa_receipt = fetch_param_value(item_response, "MpesaReceiptNumber", "Name")
 				pr = frappe.get_doc(
 					integration_request.reference_doctype, integration_request.reference_docname
@@ -217,15 +245,17 @@ def get_completed_integration_requests_info(reference_doctype, reference_docname
 			"reference_docname": reference_docname,
 			"status": "Completed",
 		},
-		pluck="output",
+		fields=["output", "data"],
 	)
 
 	mpesa_receipts, completed_payments = [], []
 
-	for out in output_of_other_completed_requests:
-		out = frappe._dict(loads(out))
+	for request in output_of_other_completed_requests:
+		out = frappe._dict(loads(request.output))
 		item_response = out["CallbackMetadata"]["Item"]
-		completed_amount = fetch_param_value(item_response, "Amount", "Name")
+		completed_amount = flt(frappe._dict(loads(request.data or "{}")).request_amount) or fetch_param_value(
+			item_response, "Amount", "Name"
+		)
 		completed_mpesa_receipt = fetch_param_value(item_response, "MpesaReceiptNumber", "Name")
 		completed_payments.append(completed_amount)
 		mpesa_receipts.append(completed_mpesa_receipt)
