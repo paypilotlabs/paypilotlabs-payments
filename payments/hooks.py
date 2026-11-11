@@ -6,7 +6,7 @@ from payments.brand import BRAND
 app_title = BRAND["product_name"]
 app_logo_url = BRAND["logo"]
 app_publisher = BRAND["company"]
-app_description = "Payments app for frappe"
+app_description = "Payment gateway integrations for PayPilotLabs products"
 app_email = BRAND["email"]
 app_license = "MIT"
 

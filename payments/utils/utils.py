@@ -6,6 +6,13 @@ from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+def get_safe_redirect_to():
+	"""`redirect_to` from the query string, limited to this site (no open redirect)."""
+	from frappe.www.login import sanitize_redirect
+
+	return sanitize_redirect(frappe.form_dict.get("redirect_to"))
+
+
 def validate_integration_request(docname: str | None):
 	if frappe.db.get_value("Integration Request", docname, "status") == "Cancelled":
 		frappe.throw(_("Expired Token"))
@@ -206,12 +213,9 @@ def before_install():
 
 @contextmanager
 def erpnext_app_import_guard():
-	marketplace_link = '<a href="https://frappecloud.com/marketplace/apps/erpnext">Marketplace</a>'
-	github_link = '<a href="https://github.com/frappe/erpnext">GitHub</a>'
-	msg = _("erpnext app is not installed. Please install it from {} or {}").format(
-		marketplace_link, github_link
-	)
+	link = '<a href="https://github.com/paypilotlabs/paypilotlabs-erp">PayPilotLabs ERP</a>'
+	msg = _("This feature needs {0}. Install it on this site and try again.").format(link)
 	try:
 		yield
 	except ImportError:
-		frappe.throw(msg, title=_("Missing ERPNext App"))
+		frappe.throw(msg, title=_("ERP Not Installed"))

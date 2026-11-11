@@ -358,6 +358,8 @@ class RazorpaySettings(Document):
 					),
 					data=payment_options,
 				)
+				# keep the order id server-side so the payment signature can be checked against it
+				integration_request.db_set("data", json.dumps({**kwargs, "order_id": order["id"]}, default=str))
 				order["integration_request"] = integration_request.name
 				return order  # Order returned to be consumed by razorpay.js
 			except Exception:
@@ -365,11 +367,22 @@ class RazorpaySettings(Document):
 				frappe.throw(_("Could not create razorpay order"))
 
 	def create_request(self, data):
-		self.data = frappe._dict(data)
+		data = frappe._dict(data)
 
 		try:
-			self.integration_request = frappe.get_doc("Integration Request", self.data.token)
-			self.integration_request.update_status(self.data, "Queued")
+			self.integration_request = frappe.get_doc("Integration Request", data.token)
+			if self.integration_request.integration_request_service != "Razorpay":
+				frappe.throw(_("Invalid payment request"), exc=frappe.PermissionError)
+
+			# Trust only what we stored; the browser supplies just the payment id and its signature.
+			self.data = frappe._dict(json.loads(self.integration_request.data))
+			self.verify_payment_signature(self.data, data.razorpay_payment_id, data.razorpay_signature)
+			payment = {
+				"razorpay_payment_id": data.razorpay_payment_id,
+				"razorpay_signature": data.razorpay_signature,
+			}
+			self.data.update(payment)
+			self.integration_request.update_status(payment, "Queued")
 			return self.authorize_payment()
 
 		except Exception:
@@ -497,6 +510,21 @@ class RazorpaySettings(Document):
 
 		return result
 
+	def verify_payment_signature(self, data, payment_id, signature):
+		"""Prove payment_id was paid for the order or subscription stored on our Integration Request."""
+		secret = self.get_settings(data).api_secret
+		if data.get("subscription_id"):
+			body = f"{payment_id}|{data['subscription_id']}"
+		elif data.get("order_id"):
+			body = f"{data['order_id']}|{payment_id}"
+		else:
+			body = None
+
+		if not (body and payment_id and signature and secret):
+			frappe.throw(_("Razorpay Signature Verification Failed"), exc=frappe.PermissionError)
+
+		return self.verify_signature(body, signature, secret)
+
 	@frappe.whitelist()
 	def clear(self):
 		self.api_key = self.api_secret = None
@@ -581,19 +609,26 @@ def order_payment_success(integration_request, params):
 	        integration_request (string): Name for integration request doc
 	        params (string): Params to be updated for integration request.
 	"""
-	params = json.loads(params)
-	integration = frappe.get_doc("Integration Request", integration_request)
+	params = frappe._dict(json.loads(params) if isinstance(params, str) else params)
+	integration = get_razorpay_integration_request(integration_request)
+	if integration.status in ("Authorized", "Completed"):
+		return
 
-	# Update integration request
-	integration.update_status(params, integration.status)
-	integration.reload()
-
-	data = json.loads(integration.data)
+	data = frappe._dict(json.loads(integration.data))
 	controller = frappe.get_doc("Razorpay Settings")
+	controller.verify_payment_signature(data, params.razorpay_payment_id, params.razorpay_signature)
+
+	# Only the payment id and signature come from the browser; the rest stays as we stored it.
+	payment = {
+		"razorpay_payment_id": params.razorpay_payment_id,
+		"razorpay_signature": params.razorpay_signature,
+	}
+	integration.update_status(payment, integration.status)
+	data.update(payment)
 
 	# Update payment and integration data for payment controller object
 	controller.integration_request = integration
-	controller.data = frappe._dict(data)
+	controller.data = data
 
 	# Authorize payment
 	controller.authorize_payment()
@@ -608,9 +643,17 @@ def order_payment_failure(integration_request, params):
 	        params (TYPE): error data to be updated
 	"""
 	frappe.log_error(params, "Razorpay Payment Failure")
-	params = json.loads(params)
-	integration = frappe.get_doc("Integration Request", integration_request)
-	integration.update_status(params, integration.status)
+	params = json.loads(params) if isinstance(params, str) else params
+	integration = get_razorpay_integration_request(integration_request)
+	# keep the error under its own key so it cannot overwrite the stored payment data
+	integration.update_status({"razorpay_failure": params}, integration.status)
+
+
+def get_razorpay_integration_request(name):
+	integration = frappe.get_doc("Integration Request", name)
+	if integration.integration_request_service != "Razorpay":
+		frappe.throw(_("Invalid payment request"), exc=frappe.PermissionError)
+	return integration
 
 
 def convert_rupee_to_paisa(**kwargs):

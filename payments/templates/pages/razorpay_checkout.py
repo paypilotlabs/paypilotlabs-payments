@@ -71,20 +71,15 @@ def make_payment(
 	reference_doctype: str,
 	reference_docname: str,
 	token: str,
+	razorpay_signature: str | None = None,
 ):
-	data = {}
-
-	if isinstance(options, str):
-		data = json.loads(options)
-
-	data.update(
-		{
-			"razorpay_payment_id": razorpay_payment_id,
-			"reference_docname": reference_docname,
-			"reference_doctype": reference_doctype,
-			"token": token,
-		}
-	)
+	# options, reference_doctype and reference_docname are kept for old clients but not trusted:
+	# create_request reads everything except the payment id and signature from the Integration Request.
+	data = {
+		"razorpay_payment_id": razorpay_payment_id,
+		"razorpay_signature": razorpay_signature,
+		"token": token,
+	}
 
 	data = frappe.get_doc("Razorpay Settings").create_request(data)
 	# Also reachable over GET, which Frappe does not commit, and the payment must be recorded.

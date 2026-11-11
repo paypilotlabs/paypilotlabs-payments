@@ -7,4 +7,5 @@ payments/docs/current
 node_modules/
 __pycache__/
 .aider*
-.helix
+.helix.venv/
+uv.lock
