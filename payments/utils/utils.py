@@ -213,12 +213,9 @@ def before_install():
 
 @contextmanager
 def erpnext_app_import_guard():
-	marketplace_link = '<a href="https://frappecloud.com/marketplace/apps/erpnext">Marketplace</a>'
-	github_link = '<a href="https://github.com/frappe/erpnext">GitHub</a>'
-	msg = _("erpnext app is not installed. Please install it from {} or {}").format(
-		marketplace_link, github_link
-	)
+	link = '<a href="https://github.com/paypilotlabs/paypilotlabs-erp">PayPilotLabs ERP</a>'
+	msg = _("This feature needs {0}. Install it on this site and try again.").format(link)
 	try:
 		yield
 	except ImportError:
-		frappe.throw(msg, title=_("Missing ERPNext App"))
+		frappe.throw(msg, title=_("ERP Not Installed"))
